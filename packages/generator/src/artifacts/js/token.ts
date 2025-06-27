@@ -1,34 +1,41 @@
 import type { Context } from '@pandacss/core'
 import outdent from 'outdent'
+import { isValidVarName, toTokenVarName } from './tokens-entry'
 
 export function generateTokenJs(ctx: Context) {
   const { tokens } = ctx
-  const map = new Map<string, { value: string; variable: string }>()
+  const map = new Map<string, string>()
 
   tokens.allTokens.forEach((token) => {
-    const { varRef, isVirtual } = token.extensions
-    const value = isVirtual || token.extensions.condition !== 'base' ? varRef : token.value
-    map.set(token.name, { value, variable: varRef })
+    const nameExpr = toTokenVarName(token.name)
+    if (isValidVarName(nameExpr)) map.set(token.name, nameExpr)
   })
 
   const obj = Object.fromEntries(map)
 
   return {
     js: outdent`
-  const tokens = ${JSON.stringify(obj, null, 2)}
+  import * as tokens from './tokens-entry.mjs';
 
+  const tokenEntryNames = ${JSON.stringify(obj, null, 2)}
+
+  export { tokens }
+  
   export function token(path, fallback) {
-    return tokens[path]?.value || fallback
+    const name = tokenEntryNames[path]
+    const value = name ? tokens[name] : tokens.$[path]
+    return value || fallback
   }
 
   function tokenVar(path, fallback) {
-    return tokens[path]?.variable || fallback
+    return token(path)?.var || fallback
   }
 
   token.var = tokenVar
   `,
     dts: outdent`
   ${ctx.file.importType('Token', './tokens')}
+  export * as tokens from './tokens-entry.d.ts'
 
   export declare const token: {
     (path: Token, fallback?: string): string
